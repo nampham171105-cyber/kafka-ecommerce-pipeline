@@ -1,0 +1,78 @@
+services:
+  kafka:
+    image: apache/kafka:latest
+    container_name: kafka
+    ports:
+      - "9092:9092" # cong giao tiep noi bo (danh cho cac service khac chung mang nhu spark, airflow...)
+      - "29092:29092" # cong giao tiep ben ngoai (danh cho cac ung dung chay local tren may nhu python..)
+    environment:
+      # ---- KRaft core ----
+      KAFKA_NODE_ID: 1 # dinh danh broker
+      KAFKA_PROCESS_ROLES: broker,controller # vai tro cua broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+
+      # ---- Listeners (ALL roles must appear here) ----
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_EXTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093 
+      # cong mo ra de lang nghe
+
+      # ---- Advertised addresses ----
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_EXTERNAL://host.docker.internal:29092 
+      # danh sach dia chi, khi ket noi lan dau, kafka se gui dia chi cho cac client tu ket noi
+
+      # ---- Controller configuration ----
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # giao tiep metadata dung controller con giao tiep du lieu voi nhau thi dung plaintext
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # he so nhan ban la 1
+
+      # ---- Protocol mapping ----
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+
+      # ---- Storage ----
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      # thu muc luu tru du lieu, vi la tmp nen se bi xoa du lieu neu docker down
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local-kafka
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: kafka_db
+    ports:
+      - "2345:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+ 
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+ 
+volumes:
+  pgdata:
